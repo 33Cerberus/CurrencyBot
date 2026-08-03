@@ -6,6 +6,7 @@ A simple Telegram bot that shows real-time currency exchange rates against UAH, 
 
 - Inline keyboard menu — select a currency (USD, EUR, PLN, GBP) with a single tap
 - Real-time exchange rates (buy/sell or cross rate) fetched from Monobank's public API
+- Rate history — every checked rate is saved per user, with a `/history` view of the last 5 checks per currency
 - Automatic retry logic if the API is temporarily unavailable
 - Clean UX — messages are edited in place instead of sending new ones
 
@@ -14,6 +15,7 @@ A simple Telegram bot that shows real-time currency exchange rates against UAH, 
 - Python 3.11+
 - [aiogram 3.x](https://docs.aiogram.dev/) — async Telegram Bot framework
 - [httpx](https://www.python-httpx.org/) — async HTTP client
+- SQLite — local storage for rate history
 - python-dotenv — environment variable management
 
 ## Setup
@@ -48,8 +50,10 @@ A simple Telegram bot that shows real-time currency exchange rates against UAH, 
 
 ```
 CurrencyBot/
-├── bot.py          # Telegram bot logic, handlers, keyboards
+├── bot.py          # Telegram bot logic and handlers
 ├── api.py          # Monobank API client and rate-lookup logic
+├── db.py           # SQLite storage: init, save, and fetch rate history
+├── keyboards.py     # Inline keyboard builders (main menu, history menu, back button)
 ├── .env.example    # Template for environment variables
 ├── .gitignore
 └── requirements.txt
@@ -58,16 +62,20 @@ CurrencyBot/
 ## How It Works
 
 1. User sends `/start` → bot shows an inline keyboard with currency options
-2. User taps a currency → bot fetches live rates from Monobank's API
-3. Bot edits the message in place to show the rate, with a "Back" button
-4. Tapping "Back" returns to the main menu
+2. User taps a currency → bot fetches live rates from Monobank's API, edits the message to show the rate, and saves the result to the database
+3. User can tap "History" from the main menu → select a currency → see the last 5 checked rates for that currency
+4. Tapping "Back" returns to the previous menu
 
 ## Roadmap
 
-- [ ] Store rate history in SQLite for statistics
+- [x] Store rate history in SQLite for statistics
 - [ ] Currency rate subscriptions with periodic updates
 - [ ] Rate change charts
 
 ## License
 
 MIT
+
+---
+
+*This README was created with the help of Claude AI.*
