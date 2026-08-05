@@ -27,5 +27,14 @@ def back_keyboard(back_to):
         [back_button(back_to)],
     ])
 
+def show_rate_keyboard(currency_code, subscribed):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [subscribe_button(currency_code, subscribed),
+        back_button("main")]
+    ])
+
 def back_button(back_to):
     return InlineKeyboardButton(text="Back", callback_data=f"open_{back_to}")
+
+def subscribe_button(currency_code, subscribed):
+    return InlineKeyboardButton(text="Unsubscribe" if subscribed else "Subscribe", callback_data=f"{"unsubscribe" if subscribed else "subscribe"}_{currency_code}")
