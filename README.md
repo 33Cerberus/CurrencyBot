@@ -1,21 +1,24 @@
 # CurrencyBot
 
-A simple Telegram bot that shows real-time currency exchange rates against UAH, using data from the Monobank public API. Built with inline keyboards for a clean, spam-free chat experience.
+A Telegram bot that shows real-time currency exchange rates against UAH, using data from the Monobank public API. Built with inline keyboards for a clean, spam-free chat experience.
 
 ## Features
 
 - Inline keyboard menu — select a currency (USD, EUR, PLN, GBP) with a single tap
 - Real-time exchange rates (buy/sell or cross rate) fetched from Monobank's public API
-- Rate history — every checked rate is saved per user, with a `/history` view of the last 5 checks per currency
+- Rate subscriptions — subscribe to a currency and receive periodic updates automatically
+- Rate history — every rate change is stored, with a menu to view the last 5 recorded changes per currency
+- Response caching — API responses are cached to stay within Monobank's rate limit
 - Automatic retry logic if the API is temporarily unavailable
+- Resilient background worker — a failed delivery to one subscriber never stops the rest
 - Clean UX — messages are edited in place instead of sending new ones
 
 ## Tech Stack
 
-- Python 3.11+
+- Python 3.12+
 - [aiogram 3.x](https://docs.aiogram.dev/) — async Telegram Bot framework
 - [httpx](https://www.python-httpx.org/) — async HTTP client
-- SQLite — local storage for rate history
+- SQLite — local storage for rate history, subscriptions, and the API cache
 - python-dotenv — environment variable management
 
 ## Setup
@@ -43,33 +46,52 @@ A simple Telegram bot that shows real-time currency exchange rates against UAH, 
 
 4. Run the bot:
    ```bash
-   python bot.py
+   python bot/bot.py
    ```
+
+   The `data/` directory and all SQLite databases are created automatically on first run.
 
 ## Project Structure
 
 ```
 CurrencyBot/
-├── bot.py          # Telegram bot logic and handlers
-├── api.py          # Monobank API client and rate-lookup logic
-├── db.py           # SQLite storage: init, save, and fetch rate history
-├── keyboards.py     # Inline keyboard builders (main menu, history menu, back button)
-├── .env.example    # Template for environment variables
+├── bot/
+│   ├── bot.py                    # Handlers, background updater, entry point
+│   ├── api.py                    # Monobank API client, caching, rate lookup
+│   ├── keyboards.py              # Inline keyboard builders
+│   └── databases/
+│       ├── rate_history.py       # Stored rate changes
+│       ├── subscriptions.py      # User subscriptions
+│       └── data_history.py       # Cached raw API response
+├── data/                         # SQLite databases (generated, git-ignored)
+├── .env.example                  # Template for environment variables
 ├── .gitignore
+├── LICENSE
 └── requirements.txt
 ```
 
 ## How It Works
 
 1. User sends `/start` → bot shows an inline keyboard with currency options
-2. User taps a currency → bot fetches live rates from Monobank's API, edits the message to show the rate, and saves the result to the database
-3. User can tap "History" from the main menu → select a currency → see the last 5 checked rates for that currency
-4. Tapping "Back" returns to the previous menu
+2. User taps a currency → bot fetches the current rate (from cache if it is fresh enough) and edits the message in place
+3. From the rate screen the user can subscribe or unsubscribe with a single toggle button
+4. A background task polls the API on a fixed interval and pushes updates to every subscriber
+5. Rates are written to the history table only when the value actually changes, so the history reflects real movements rather than poll counts
+6. The History menu shows the last 5 recorded changes for the selected currency
+
+### Configuration
+
+Two constants control the timing:
+
+- `CACHE_TTL` in `api.py` — how long a cached API response stays valid
+- `UPDATE_INTERVAL` in `bot.py` — how often subscribers receive updates
+
+`CACHE_TTL` must stay shorter than `UPDATE_INTERVAL`, otherwise the background updater would serve stale data to subscribers.
 
 ## Roadmap
 
 - [x] Store rate history in SQLite for statistics
-- [ ] Currency rate subscriptions with periodic updates
+- [x] Currency rate subscriptions with periodic updates
 - [ ] Rate change charts
 
 ## License
