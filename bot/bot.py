@@ -1,7 +1,7 @@
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
-from api import get_exchange_rate, get_exchange_rates, CURRENCY_CODES
+from api import get_exchange_rate, get_exchange_rates, get_available_currencies
 from dotenv import load_dotenv
 from databases.data_history import init_db as init_data_history
 from databases.rate_history import init_db as init_rate_history, save_rate, get_last_rates
@@ -9,10 +9,12 @@ from databases.subscriptions import init_db as init_subscriptions, add_subscript
 from keyboards import main_menu_keyboard, back_keyboard, history_menu_keyboard, show_rate_keyboard
 from datetime import datetime
 import asyncio
+from currencies import currency_name
 import os
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 UPDATE_INTERVAL = 300
+AVAILABLE_CURRENCIES = []
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -39,7 +41,7 @@ async def show_rate(callback: CallbackQuery):
     user_id = callback.from_user.id
     await callback.answer()
 
-    await message.edit_text(f"Double checking {CURRENCY_CODES[currency_code]}...")
+    await message.edit_text(f"Double checking {currency_name(currency_code)}...")
 
     data = await get_exchange_rates()
     if data is None:
@@ -78,14 +80,14 @@ async def unsubscribe(callback: CallbackQuery):
 async def show_history(callback: CallbackQuery):
     await callback.answer()
     currency_code = int(callback.data.split("_")[1])
-    await callback.message.edit_text(f"Double checking {CURRENCY_CODES[currency_code]}...")
+    await callback.message.edit_text(f"Double checking {currency_name(currency_code)}...")
 
     history = get_last_rates(currency_code, 5)
     if len(history) == 0:
-        await callback.message.edit_text(f"No history on {CURRENCY_CODES[currency_code]}", reply_markup=back_keyboard("history"))
+        await callback.message.edit_text(f"No history on {currency_name(currency_code)}", reply_markup=back_keyboard("history"))
         return
 
-    message = f"{CURRENCY_CODES[currency_code]} -> UAH history"
+    message = f"{currency_name(currency_code)} -> UAH history"
     for rate in history:
         date_time = datetime.fromisoformat(rate['timestamp']).strftime("%d.%m.%Y %H:%M")
         if rate['rate_cross'] is None:
@@ -95,11 +97,40 @@ async def show_history(callback: CallbackQuery):
 
     await callback.message.edit_text(message, reply_markup=back_keyboard("history"))
 
-async def show_main_menu(message: Message):
-    await message.edit_text("Select currency to check its rate", reply_markup=main_menu_keyboard())
+@dp.callback_query(F.data.startswith("page_"))
+async def change_page(callback: CallbackQuery):
+    _, menu_prefix, page = callback.data.split("_")
+    match menu_prefix:
+        case "currency":
+            await show_main_menu(callback.message, int(page))
+        case "history":
+            await show_history_menu(callback.message, int(page))
+    await callback.answer()
 
-async def show_history_menu(message: Message):
-    await message.edit_text("Select currency to check its history", reply_markup=history_menu_keyboard())
+@dp.callback_query(F.data == "noop")
+async def noop(callback: CallbackQuery):
+    await callback.answer()
+
+async def show_main_menu(message: Message, page=0):
+    currencies = AVAILABLE_CURRENCIES or await load_currencies()
+    if not currencies:
+        await message.edit_text("Currency list is unavailable, try again later")
+        return
+    await message.edit_text(
+        "Select currency to check its rate",
+        reply_markup=main_menu_keyboard(currencies, page),
+    )
+
+
+async def show_history_menu(message: Message, page=0):
+    currencies = AVAILABLE_CURRENCIES or await load_currencies()
+    if not currencies:
+        await message.edit_text("Currency list is unavailable, try again later")
+        return
+    await message.edit_text(
+        "Select currency to check its history",
+        reply_markup=history_menu_keyboard(currencies, page),
+    )
 
 async def rate_updater():
     while True:
@@ -117,11 +148,11 @@ async def rate_updater():
             print(f"Rate updater cycle failed: {error}")
 
 async def send_update(user_id, currency_code, data):
-    message = await bot.send_message(chat_id=user_id,text=f"Double checking {CURRENCY_CODES[currency_code]}...")
+    message = await bot.send_message(chat_id=user_id,text=f"Double checking {currency_name(currency_code)}...")
 
     rate = get_exchange_rate(data, currency_code)
     if rate is None:
-        await message.edit_text(f"No data on {CURRENCY_CODES[currency_code]}")
+        await message.edit_text(f"No data on {currency_name(currency_code)}")
         return
 
     message_text = format_and_save_rate(rate, currency_code)
@@ -130,20 +161,28 @@ async def send_update(user_id, currency_code, data):
 def format_and_save_rate(rate, currency_code):
     last_rates = get_last_rates(currency_code, 1)
     if "rateCross" in rate:
-        message_text = f"{CURRENCY_CODES[currency_code]} -> UAH Cross: {rate.get('rateCross')}"
+        message_text = f"{currency_name(currency_code)} -> UAH Cross: {rate.get('rateCross')}"
         if not last_rates or rate.get('rateCross') != last_rates[0]['rate_cross']:
             save_rate(currency_code, None, None, rate.get('rateCross'))
     else:
-        message_text = f"{CURRENCY_CODES[currency_code]} -> UAH Buy: {rate.get('rateBuy')} Sell: {rate.get('rateSell')}"
+        message_text = f"{currency_name(currency_code)} -> UAH Buy: {rate.get('rateBuy')} Sell: {rate.get('rateSell')}"
         if not last_rates or rate.get('rateBuy') != last_rates[0]['rate_buy'] or rate.get('rateSell') != last_rates[0]['rate_sell']:
             save_rate(currency_code, rate.get('rateBuy'), rate.get('rateSell'), None)
 
     return message_text
 
+async def load_currencies():
+    global AVAILABLE_CURRENCIES
+    data = await get_exchange_rates()
+    if data is not None:
+        AVAILABLE_CURRENCIES = get_available_currencies(data)
+    return AVAILABLE_CURRENCIES
+
 async def main():
     init_data_history()
     init_rate_history()
     init_subscriptions()
+    await load_currencies()
     task = asyncio.create_task(rate_updater())
     await dp.start_polling(bot)
 

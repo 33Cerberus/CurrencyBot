@@ -2,15 +2,8 @@ import httpx
 import asyncio
 from databases.data_history import save_data, get_last_data_record
 from datetime import datetime, timezone, timedelta
+from currencies import currency_full_name
 import json
-
-CURRENCY_CODES = {
-    980: "UAH",
-    840: "USD",
-    978: "EUR",
-    826: "GBP",
-    985: "PLN",
-}
 
 CACHE_TTL = timedelta(minutes=3)
 
@@ -42,36 +35,17 @@ async def get_exchange_rates():
     save_data(json.dumps(data))
     return data
 
-def get_exchange_rate(data, currency_code):
+def get_exchange_rate(data, currency_code, base_code=980):
     for rate in data:
-        if rate.get("currencyCodeA") == currency_code:
+        if rate.get("currencyCodeA") == currency_code and rate.get("currencyCodeB") == base_code:
             return rate
     print("Failed to get exchange rate")
     return None
 
-async def main():
-    data_task = asyncio.create_task(get_exchange_rates())
+def get_available_currencies(data, base_code=980):
+    currencies = []
+    for rate in data:
+        if rate.get("currencyCodeB") == base_code and currency_full_name(rate.get("currencyCodeA")) is not None:
+            currencies.append(rate.get("currencyCodeA"))
 
-    while True:
-        try:
-            currencyCode = int(input("Enter currency code: "))
-            if currencyCode in CURRENCY_CODES and CURRENCY_CODES[currencyCode] != "UAH":
-                break
-            print("Invalid currency code")
-        except ValueError:
-            print("Invalid currency code")
-
-    data = await data_task
-    if data is None:
-        return
-    rate = get_exchange_rate(data, currencyCode)
-    if rate is None:
-        return
-
-    if "rateCross" in rate:
-        print(CURRENCY_CODES[currencyCode], "-> UAH", '\n', "Cross:", rate.get("rateCross"))
-    else:
-        print(CURRENCY_CODES[currencyCode], "-> UAH", '\n', "Buy:", rate.get("rateBuy"), '\n', "Sell:", rate.get("rateSell"))
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    return currencies
