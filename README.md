@@ -96,7 +96,3 @@ The currency list is loaded once at startup and reused for pagination. Monobank 
 ## License
 
 MIT
-
----
-
-*This README was created with the help of Claude AI.*
